@@ -1,3 +1,4 @@
+import time
 import dateparser
 import logging
 import os
@@ -15,7 +16,8 @@ def get_log_file_name(log_directory, job, datetime):
 
 
 def _analyze_log_end_date(contents):
-    match = re.search(r'total time = ([\d\.]+) seconds\. CPU \([\d\.]+%\) [A-Za-z]+\s([^\n]+)\n', contents, flags=re.I)
+    match = re.search(r'Total plot creation time was ([\d\.]+) sec [A-Za-z]*\s([^\n]*)\n', contents, flags=re.I)
+#    match = re.search(r'total time = ([\d\.]+) seconds\. CPU \([\d\.]+%\) [A-Za-z]+\s([^\n]+)\n', contents, flags=re.I)
     if not match:
         return False
     total_seconds, date_raw = match.groups()
@@ -61,10 +63,19 @@ def get_completed_log_files(log_directory, skip=None):
         except UnicodeDecodeError:
             continue
         f.close()
-        if 'Total time = ' not in contents:
+        if 'Total plot creation time' not in contents:
             continue
+        contents = re.sub(r'(Total plot creation time was )([\d\.]+)( sec)', add_date_log_newplot, contents)
+        mtime = os.path.getmtime(file_path)
+        mtime = time.strftime('%a %b %d %H:%M:%S %Y', time.localtime(mtime))
+        contents = re.sub(r'REPLACE_SETDATE', " "+mtime, contents)
         files[file_path] = contents
     return files
+
+
+def add_date_log_newplot(match_obj):
+    if match_obj.group() is not None:
+        return match_obj.group() + "REPLACE_SETDATE"
 
 
 def analyze_log_dates(log_directory, analysis):
@@ -88,7 +99,7 @@ def analyze_log_times(log_directory):
         phase_times, phase_dates = get_phase_info(contents, pretty_print=False)
         for phase, seconds in phase_times.items():
             total_times[phase] += seconds
-        splits = contents.split('Time for phase')
+        splits = contents.split('Phase')
         phase = 0
         new_lines = 1
         for split in splits:
@@ -112,7 +123,8 @@ def get_phase_info(contents, view_settings=None, pretty_print=True):
     phase_dates = {}
 
     for phase in range(1, 5):
-        match = re.search(rf'time for phase {phase} = ([\d\.]+) seconds\. CPU \([\d\.]+%\) [A-Za-z]+\s([^\n]+)\n', contents, flags=re.I)
+        match = re.search(rf'Phase {phase} took ([\d\.]+) sec[A-Za-z]*\s([^\n]*)\n', contents, flags=re.I)
+#        match = re.search(rf'time for phase {phase} = ([\d\.]+) seconds\. CPU \([\d\.]+%\) [A-Za-z]+\s([^\n]+)\n', contents, flags=re.I)
         if match:
             seconds, date_raw = match.groups()
             seconds = float(seconds)
@@ -165,7 +177,7 @@ def check_log_progress(jobs, running_work, progress_settings, notification_setti
         data = f.read()
         f.close()
 
-        line_count = (data.count('\n') + 1)
+        line_count = (data.count('\n') + 1) - 11
 
         progress = get_progress(line_count=line_count, progress_settings=progress_settings)
 
